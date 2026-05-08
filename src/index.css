@@ -1,0 +1,65 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-brand-50: #f0fdfa;
+  --color-brand-100: #ccfbf1;
+  --color-brand-200: #99f6e4;
+  --color-brand-400: #2dd4bf;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+}
+
+/* ── Base ─────────────────────────────────────── */
+html { font-size: 15px; }
+
+body {
+  @apply text-slate-800 antialiased;
+  font-family: var(--font-sans);
+  background-color: #f1f5f9;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: var(--font-display);
+}
+
+/* ── Scrollbar ────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 100px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+/* ── Focus Ring ───────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Notification dropdown animation ─────────── */
+@keyframes notifSlideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Print ────────────────────────────────────── */
+@media print {
+  body * { visibility: hidden; }
+  #md-report-container, #md-report-container * { visibility: visible; }
+  #md-report-container {
+    position: absolute;
+    left: 0; top: 0; width: 100%;
+    margin: 0; padding: 2rem;
+  }
+  #download-pdf-btn { display: none !important; }
+}
