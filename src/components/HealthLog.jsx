@@ -25,6 +25,7 @@ export default function HealthLog() {
   const [showAdd, setShowAdd] = useState(false);
   const [entry, setEntry] = useState({ mood: 3, sleep: 7, water: 8, energy: 3, notes: '' });
   const [aiInsight, setAiInsight] = useState(null);
+  const [streamingInsight, setStreamingInsight] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [viewMonth, setViewMonth] = useState(new Date());
 
@@ -59,6 +60,7 @@ export default function HealthLog() {
     if (logs.length < 3) return;
     setIsAnalyzing(true);
     setAiInsight(null);
+    setStreamingInsight('');
 
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -98,19 +100,26 @@ One specific thing the patient should focus on this week based on their weakest 
 Be warm, encouraging, and specific with data references.`;
 
       const modelsToTry = ['gemini-2.0-flash', 'gemini-2.5-flash'];
-      let aiText = null;
+      let accumulated = '';
+      let streamed = false;
 
       for (const model of modelsToTry) {
         try {
-          const response = await ai.models.generateContent({ model, contents: prompt });
-          aiText = response.text;
+          const stream = await ai.models.generateContentStream({ model, contents: prompt });
+          accumulated = '';
+          for await (const chunk of stream) {
+            accumulated += chunk.text || '';
+            setStreamingInsight(accumulated);
+          }
+          streamed = true;
           break;
         } catch (e) {
           if (model === modelsToTry[modelsToTry.length - 1]) throw e;
         }
       }
 
-      setAiInsight(aiText || 'No response received.');
+      setStreamingInsight('');
+      setAiInsight(accumulated || 'No response received.');
     } catch (err) {
       setAiInsight(`**Error:** ${err.message}`);
     } finally {
@@ -322,14 +331,17 @@ Be warm, encouraging, and specific with data references.`;
           <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
             <Sparkles size={15} className="text-purple-500" /> AI Health Insights
           </h3>
-          {isAnalyzing ? (
-            <div className="space-y-3 animate-pulse">
-              <div className="h-3 bg-slate-100 rounded w-3/4" />
-              <div className="h-3 bg-slate-100 rounded w-1/2" />
-              <div className="h-3 bg-slate-100 rounded w-5/6" />
-              <div className="h-3 bg-slate-100 rounded w-2/3 mt-4" />
-              <div className="h-3 bg-slate-100 rounded w-4/5" />
-            </div>
+          {isAnalyzing && streamingInsight ? (
+              <div className="prose prose-sm prose-slate max-w-none prose-p:my-1.5 prose-headings:font-semibold prose-headings:text-slate-800 prose-li:my-0.5 max-h-[400px] overflow-y-auto"
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingInsight)) }} />
+            ) : isAnalyzing ? (
+              <div className="space-y-3 animate-pulse">
+                <div className="h-3 bg-slate-100 rounded w-3/4" />
+                <div className="h-3 bg-slate-100 rounded w-1/2" />
+                <div className="h-3 bg-slate-100 rounded w-5/6" />
+                <div className="h-3 bg-slate-100 rounded w-2/3 mt-4" />
+                <div className="h-3 bg-slate-100 rounded w-4/5" />
+              </div>
           ) : aiInsight ? (
             <div className="prose prose-sm prose-slate max-w-none prose-p:my-1.5 prose-headings:font-semibold prose-headings:text-slate-800 prose-li:my-0.5 max-h-[400px] overflow-y-auto"
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(aiInsight)) }} />

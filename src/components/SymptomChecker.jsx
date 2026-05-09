@@ -40,6 +40,7 @@ export default function SymptomChecker() {
   const [symptoms, setSymptoms] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState(null);       // { triage, analysis }
+  const [streamingText, setStreamingText] = useState('');
   const [error, setError] = useState('');
 
   const handleCheck = async (overrideText) => {
@@ -49,6 +50,7 @@ export default function SymptomChecker() {
     setSymptoms(text);
     setIsLoading(true);
     setResult(null);
+    setStreamingText('');
     setError('');
 
     try {
@@ -83,23 +85,30 @@ Brief summary of what the symptoms might indicate (avoid definitive diagnoses â€
 Brief reminder this is not a medical diagnosis.`;
 
       const modelsToTry = ['gemini-2.0-flash', 'gemini-2.5-flash'];
-      let aiText = null;
+      let accumulated = '';
+      let streamed = false;
 
       for (const model of modelsToTry) {
         try {
-          const response = await ai.models.generateContent({ model, contents: prompt });
-          aiText = response.text;
+          const stream = await ai.models.generateContentStream({ model, contents: prompt });
+          accumulated = '';
+          for await (const chunk of stream) {
+            accumulated += chunk.text || '';
+            setStreamingText(accumulated);
+          }
+          streamed = true;
           break;
         } catch (e) {
           if (model === modelsToTry[modelsToTry.length - 1]) throw e;
         }
       }
 
-      if (!aiText) throw new Error('No response from AI.');
+      if (!streamed || !accumulated) throw new Error('No response from AI.');
 
-      // Extract triage level
+      // Extract triage level from the final accumulated text
       let triage = 'see-doctor'; // default
-      const jsonMatch = aiText.match(/```json\n([\s\S]*?)\n```/);
+      let analysisText = accumulated;
+      const jsonMatch = accumulated.match(/```json\n([\s\S]*?)\n```/);
       if (jsonMatch) {
         try {
           const parsed = JSON.parse(jsonMatch[1]);
@@ -107,10 +116,11 @@ Brief reminder this is not a medical diagnosis.`;
             triage = parsed.triage;
           }
         } catch (_) {}
-        aiText = aiText.replace(/```json\n[\s\S]*?\n```/, '').trim();
+        analysisText = accumulated.replace(/```json\n[\s\S]*?\n```/, '').trim();
       }
 
-      setResult({ triage, analysis: aiText });
+      setStreamingText('');
+      setResult({ triage, analysis: analysisText });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -216,7 +226,10 @@ Brief reminder this is not a medical diagnosis.`;
           {/* Analysis */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-4">AI Assessment</h3>
-            {isLoading ? (
+            {isLoading && streamingText ? (
+              <div className="prose prose-sm prose-slate max-w-none prose-p:my-1.5 prose-headings:font-semibold prose-headings:text-slate-800 prose-li:my-0.5 prose-a:text-brand-600"
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingText)) }} />
+            ) : isLoading ? (
               <div className="space-y-3 animate-pulse">
                 <div className="h-3 bg-slate-100 rounded w-3/4" />
                 <div className="h-3 bg-slate-100 rounded w-1/2" />

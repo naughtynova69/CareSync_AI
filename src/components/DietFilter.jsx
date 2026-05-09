@@ -13,6 +13,7 @@ export default function DietFilter() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [nutrients, setNutrients] = useState(DEFAULT_NUTRIENTS);
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
   const [imagePreview, setImagePreview] = useState(null);
   const fileRef = useRef(null);
 
@@ -36,6 +37,7 @@ export default function DietFilter() {
     setIsLoading(true);
     setAnalysisResult(null);
     setNutrients(DEFAULT_NUTRIENTS);
+    setStreamingText('');
 
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -66,15 +68,21 @@ IMPORTANT: At the very end of your response, provide a JSON block enclosed in \`
       }];
 
       const modelsToTry = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite-preview-06-17'];
-      let aiText = null;
+      let accumulated = '';
+      let streamed = false;
 
       for (const modelName of modelsToTry) {
         try {
-          const response = await ai.models.generateContent({
+          const stream = await ai.models.generateContentStream({
             model: modelName,
             contents: contentParts
           });
-          aiText = response.text;
+          accumulated = '';
+          for await (const chunk of stream) {
+            accumulated += chunk.text || '';
+            setStreamingText(accumulated);
+          }
+          streamed = true;
           break;
         } catch (modelError) {
           console.warn(`Diet analysis: ${modelName} failed —`, modelError.message);
@@ -82,22 +90,24 @@ IMPORTANT: At the very end of your response, provide a JSON block enclosed in \`
         }
       }
 
-      if (aiText) {
-        const jsonMatch = aiText.match(/```json\n([\s\S]*?)\n```/);
+      let finalText = accumulated;
+      if (finalText) {
+        const jsonMatch = finalText.match(/```json\n([\s\S]*?)\n```/);
         if (jsonMatch) {
           try {
             const jsonData = JSON.parse(jsonMatch[1]);
             if (jsonData.nutrients) {
               setNutrients(jsonData.nutrients);
             }
-            aiText = aiText.replace(/```json\n[\s\S]*?\n```/, '').trim();
+            finalText = finalText.replace(/```json\n[\s\S]*?\n```/, '').trim();
           } catch (e) {
             console.error("Failed to parse nutrient JSON", e);
           }
         }
       }
 
-      setAnalysisResult(aiText || "No response received. Please try again.");
+      setStreamingText('');
+      setAnalysisResult(finalText || "No response received. Please try again.");
     } catch (err) {
       console.error("Diet analysis error:", err);
       setAnalysisResult(`**Error:** ${err.message}\n\nPlease check your API key and try again.`);
@@ -182,7 +192,10 @@ IMPORTANT: At the very end of your response, provide a JSON block enclosed in \`
         {/* Analysis Result */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-4">Analysis Result</h3>
-          {isLoading ? (
+          {isLoading && streamingText ? (
+            <div className="prose prose-sm prose-slate max-w-none prose-p:my-1.5 prose-headings:font-semibold prose-li:my-0.5"
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingText)) }} />
+          ) : isLoading ? (
             <div className="space-y-3 animate-pulse">
               <div className="h-3 bg-slate-100 rounded w-3/4" />
               <div className="h-3 bg-slate-100 rounded w-1/2" />

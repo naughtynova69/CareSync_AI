@@ -27,6 +27,7 @@ export default function BMINutrition() {
   const [bmi, setBmi] = useState(null);
   const [bmiCategory, setBmiCategory] = useState(null);
   const [aiResult, setAiResult] = useState(null);
+  const [streamingText, setStreamingText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -60,6 +61,7 @@ export default function BMINutrition() {
     setError('');
     setIsLoading(true);
     setAiResult(null);
+    setStreamingText('');
 
     // Calculate BMI
     const bmiVal = calculateBMI();
@@ -114,19 +116,26 @@ Recommended daily caloric and macro targets based on their profile.
 Be specific with numbers. Use encouraging language.`;
 
       const modelsToTry = ['gemini-2.0-flash', 'gemini-2.5-flash'];
-      let aiText = null;
+      let accumulated = '';
+      let streamed = false;
 
       for (const model of modelsToTry) {
         try {
-          const response = await ai.models.generateContent({ model, contents: prompt });
-          aiText = response.text;
+          const stream = await ai.models.generateContentStream({ model, contents: prompt });
+          accumulated = '';
+          for await (const chunk of stream) {
+            accumulated += chunk.text || '';
+            setStreamingText(accumulated);
+          }
+          streamed = true;
           break;
         } catch (e) {
           if (model === modelsToTry[modelsToTry.length - 1]) throw e;
         }
       }
 
-      setAiResult(aiText || 'No response received.');
+      setStreamingText('');
+      setAiResult(accumulated || 'No response received.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -140,6 +149,7 @@ Be specific with numbers. Use encouraging language.`;
     setBmi(null);
     setBmiCategory(null);
     setAiResult(null);
+    setStreamingText('');
     setError('');
   };
 
@@ -278,7 +288,10 @@ Be specific with numbers. Use encouraging language.`;
             <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
               <Activity size={15} className="text-slate-500" /> Nutrition Analysis
             </h3>
-            {isLoading ? (
+            {isLoading && streamingText ? (
+              <div className="prose prose-sm prose-slate max-w-none prose-p:my-1.5 prose-headings:font-semibold prose-headings:text-slate-800 prose-li:my-0.5 prose-a:text-brand-600 prose-table:text-sm"
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(streamingText)) }} />
+            ) : isLoading ? (
               <div className="space-y-3 animate-pulse">
                 <div className="h-3 bg-slate-100 rounded w-3/4" />
                 <div className="h-3 bg-slate-100 rounded w-1/2" />

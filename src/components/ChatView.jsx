@@ -14,7 +14,17 @@ const SUGGESTED_PROMPTS = [
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 const speechSynthesis = window.speechSynthesis;
 
-export default function ChatView() {
+export default function ChatView({ userId }) {
+  const [medications, setMedications] = useState([]);
+
+  useEffect(() => {
+    if (userId) {
+      fetch(`/api/medications/${userId}`)
+        .then(res => res.json())
+        .then(data => setMedications(data))
+        .catch(err => console.error('Failed to fetch medications:', err));
+    }
+  }, [userId]);
   const [messages, setMessages] = useState([
     { role: 'assistant', content: "Hello! I'm your CareSync health assistant. I can help you understand your medications, analyze lab results, or answer general health questions.\n\nHow can I help you today?" }
   ]);
@@ -206,6 +216,10 @@ export default function ChatView() {
     removeAttachment();
     setIsLoading(true);
 
+    // Add a placeholder assistant message that we'll stream into
+    const assistantIndex = messages.length + 1; // +1 for the user msg we just added
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
     try {
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       if (!apiKey) throw new Error("API Key is missing. Add VITE_GEMINI_API_KEY to your .env file.");
@@ -213,9 +227,14 @@ export default function ChatView() {
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey });
 
+      let medContext = '';
+      if (medications && medications.length > 0) {
+        medContext = "The patient's current medications are: " + medications.map(m => `${m.name} (${m.dosage || 'unknown dosage'}) - ${m.frequency || 'unknown frequency'}`).join(', ') + ". ";
+      }
+
       const systemPrompt = currentAttachment
-        ? `You are a knowledgeable medical assistant called CareSync. The patient has attached a medical image/report. Analyze it carefully. The patient says: "${currentInput || 'Please analyze this image.'}". Provide a structured, medically accurate response using bullet points and clear sections. Be professional and empathetic.`
-        : `You are a knowledgeable medical assistant called CareSync. The patient asks: "${currentInput}". Provide a structured response using bullet points or short clear sections. Be professional, accurate, and empathetic. Use markdown formatting for readability.`;
+        ? `You are a knowledgeable medical assistant called CareSync. ${medContext}The patient has attached a medical image/report. Analyze it carefully. The patient says: "${currentInput || 'Please analyze this image.'}". Provide a structured, medically accurate response using bullet points and clear sections. Be professional and empathetic.`
+        : `You are a knowledgeable medical assistant called CareSync. ${medContext}The patient asks: "${currentInput}". Provide a structured response using bullet points or short clear sections. Be professional, accurate, and empathetic. Use markdown formatting for readability.`;
 
       let contentParts;
       if (currentAttachment) {
@@ -226,21 +245,29 @@ export default function ChatView() {
       }
 
       const modelsToTry = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite-preview-06-17'];
-      let aiText = "I'm sorry, I couldn't process that request.";
+      let streamed = false;
 
       for (const modelName of modelsToTry) {
         try {
-          const response = await ai.models.generateContent({ model: modelName, contents: contentParts });
-          aiText = response.text;
+          const stream = await ai.models.generateContentStream({ model: modelName, contents: contentParts });
+          let accumulated = '';
+          for await (const chunk of stream) {
+            accumulated += chunk.text || '';
+            const snapshot = accumulated;
+            setMessages(prev => prev.map((m, i) => i === assistantIndex ? { ...m, content: snapshot } : m));
+          }
+          streamed = true;
           break;
         } catch (modelError) {
           if (modelName === modelsToTry[modelsToTry.length - 1]) throw modelError;
         }
       }
 
-      setMessages(prev => [...prev, { role: 'assistant', content: aiText }]);
+      if (!streamed) {
+        setMessages(prev => prev.map((m, i) => i === assistantIndex ? { ...m, content: "I'm sorry, I couldn't process that request." } : m));
+      }
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `**Error:** ${err.message}\n\nPlease check your API key configuration and try again.` }]);
+      setMessages(prev => prev.map((m, i) => i === assistantIndex ? { ...m, content: `**Error:** ${err.message}\n\nPlease check your API key configuration and try again.` } : m));
     } finally {
       setIsLoading(false);
     }

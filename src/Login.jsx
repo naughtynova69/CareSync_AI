@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, Lock, Mail, User, ArrowRight, ShieldCheck, Heart, Clock } from 'lucide-react';
+import { Activity, Lock, Mail, User, ArrowRight, ShieldCheck, Heart, Clock, Loader2 } from 'lucide-react';
 
 export default function Login({ onLogin }) {
   const [isSignup, setIsSignup] = useState(false);
@@ -8,31 +8,65 @@ export default function Login({ onLogin }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
-  const isFormValid = fullName.trim() !== '' && email.trim() !== '' && password.trim() !== '';
+  const isFormValid = isSignup
+    ? fullName.trim() !== '' && email.trim() !== '' && password.trim() !== ''
+    : email.trim() !== '' && password.trim() !== '';
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
+    setLoading(true);
 
-    if (isSignup) {
-      // Signup: Store credentials in localStorage
-      localStorage.setItem('caresync_user', JSON.stringify({ fullName, email, password }));
-      onLogin(fullName.trim());
-    } else {
-      // Login: Verify credentials
-      const storedUser = JSON.parse(localStorage.getItem('caresync_user'));
-      
-      if (!storedUser) {
-        setError('No account found. Please sign up first.');
-        return;
-      }
+    try {
+      if (isSignup) {
+        // ── Signup: POST to backend API ──
+        const res = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName: fullName.trim(),
+            email: email.trim(),
+            password,
+          }),
+        });
 
-      if (storedUser.email === email && storedUser.password === password) {
-        onLogin(storedUser.fullName);
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || 'Signup failed. Please try again.');
+          return;
+        }
+
+        // Account created successfully — log the user in
+        onLogin(data.user);
       } else {
-        setError('Email or password does not match.');
+        // ── Login: POST to backend API ──
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email.trim(),
+            password,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || 'Login failed. Please try again.');
+          return;
+        }
+
+        onLogin(data.user);
       }
+    } catch (err) {
+      setError('Unable to reach the server. Make sure the backend is running.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -113,22 +147,24 @@ export default function Login({ onLogin }) {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Full Name */}
-            <div>
-              <label htmlFor="login-name" className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
-              <div className="relative">
-                <User size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  id="login-name"
-                  type="text"
-                  placeholder="John Doe"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors placeholder:text-slate-400"
-                  autoComplete="name"
-                />
+            {/* Full Name — signup only */}
+            {isSignup && (
+              <div>
+                <label htmlFor="login-name" className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
+                <div className="relative">
+                  <User size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    id="login-name"
+                    type="text"
+                    placeholder="John Doe"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 text-slate-800 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors placeholder:text-slate-400"
+                    autoComplete="name"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Email */}
             <div>
@@ -180,22 +216,31 @@ export default function Login({ onLogin }) {
             {/* Submit */}
             <button
               type="submit"
-              disabled={!isFormValid}
+              disabled={!isFormValid || loading}
               className={`w-full flex items-center justify-center gap-2 font-semibold text-sm rounded-lg py-2.5 transition-all ${
-                isFormValid
+                isFormValid && !loading
                   ? 'bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.98] shadow-sm'
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}
             >
-              {isSignup ? 'Create Account' : 'Sign in to Dashboard'}
-              <ArrowRight size={16} />
+              {loading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  {isSignup ? 'Creating Account...' : 'Signing in...'}
+                </>
+              ) : (
+                <>
+                  {isSignup ? 'Create Account' : 'Sign in to Dashboard'}
+                  <ArrowRight size={16} />
+                </>
+              )}
             </button>
           </form>
 
           <p className="text-center text-sm text-slate-500 mt-6">
             {isSignup ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button 
-              onClick={() => { setIsSignup(!isSignup); setError(''); }}
+              onClick={() => { setIsSignup(!isSignup); setError(''); setSuccessMsg(''); }}
               className="text-brand-600 font-medium hover:underline"
             >
               {isSignup ? 'Sign in' : 'Create one'}
